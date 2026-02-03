@@ -1,170 +1,176 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Cloud Notepad (GitHub Backend)</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 24px;
-      max-width: 900px;
-    }
-    textarea {
-      width: 100%;
-      height: 300px;
-      margin-top: 12px;
-      font-family: monospace;
-      font-size: 14px;
-    }
-    input, button {
-      padding: 8px;
-      margin: 4px 0;
-    }
-    button {
-      margin-right: 8px;
-    }
-    .status {
-      margin-top: 12px;
-      padding: 8px;
-      border-radius: 4px;
-      display: none;
-    }
-    .success {
-      background: #e6ffed;
-      color: #055d20;
-    }
-    .error {
-      background: #ffe6e6;
-      color: #8a0000;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>Cloud Notepad (GitHub)</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 24px;
+  max-width: 900px;
+}
+textarea {
+  width: 100%;
+  height: 320px;
+  margin-top: 12px;
+  font-family: monospace;
+  font-size: 14px;
+}
+input, button {
+  padding: 8px;
+  margin: 4px 0;
+}
+button {
+  margin-right: 6px;
+}
+.status {
+  margin-top: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  display: none;
+}
+.success { background: #e6ffed; color: #055d20; }
+.error { background: #ffe6e6; color: #8a0000; }
+</style>
 </head>
+
 <body>
 
-  <h2>Web-Based Cloud Notepad</h2>
+<h2>Web-Based Cloud Notepad</h2>
 
-  <div>
-    <label>
-      File Name:
-      <input id="filename" type="text" placeholder="notes.txt" />
-    </label>
-  </div>
+<label>
+  File name:
+  <input id="filename" placeholder="notes.txt">
+</label>
 
-  <div>
-    <button onclick="loadFile()">Load File</button>
-    <button onclick="saveFile()">Save File</button>
-    <button onclick="clearText()">Clear Text</button>
-  </div>
+<br>
 
-  <textarea id="editor" placeholder="Write or edit your text here..."></textarea>
+<button onclick="loadFile()">Load</button>
+<button onclick="saveFile()">Save</button>
+<button onclick="clearText()">Clear</button>
 
-  <div id="status" class="status"></div>
+<textarea id="editor" placeholder="Write here..."></textarea>
 
-  <script>
-    const apiBase = "https://api.github.com";
+<div id="status" class="status"></div>
 
-    const GITHUB_OWNER = "Ymichaelluisfelasol-tech";
-    const GITHUB_REPO = "web-base-notepad";
-    const GITHUB_TOKEN = "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";
+<script>
+/* ================= CONFIG ================= */
 
-    function setStatus(message, isError = false) {
-      const status = document.getElementById("status");
-      status.textContent = message;
-      status.className = "status " + (isError ? "error" : "success");
-      status.style.display = "block";
+const GITHUB_OWNER = "Ymichaelluisfelasol-tech";
+const GITHUB_REPO  = "web-base-notepad";
+const GITHUB_TOKEN = "ghp_YOUR_TOKEN_HERE";
+const BRANCH = "main";
+
+const API = "https://api.github.com";
+
+/* ============== UTILITIES ================= */
+
+function setStatus(msg, error=false) {
+  const el = document.getElementById("status");
+  el.textContent = msg;
+  el.className = "status " + (error ? "error" : "success");
+  el.style.display = "block";
+}
+
+function ghHeaders() {
+  return {
+    "Authorization": `Bearer ${GITHUB_TOKEN}`,
+    "Accept": "application/vnd.github+json",
+    "Content-Type": "application/json"
+  };
+}
+
+/* ============== LOAD FILE ================= */
+
+async function loadFile() {
+  const filename = document.getElementById("filename").value.trim();
+  if (!filename) {
+    setStatus("File name required", true);
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filename}?ref=${BRANCH}`,
+      { headers: ghHeaders() }
+    );
+
+    if (res.status === 404) {
+      setStatus("File not found", true);
+      return;
     }
 
-    async function loadFile() {
-      const filename = document.getElementById("filename").value.trim();
-      if (!filename) {
-        setStatus("File name is required.", true);
-        return;
-      }
+    if (!res.ok) throw new Error(await res.text());
 
-      try {
-        const response = await fetch(
-          `${apiBase}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filename}`,
-          {
-            headers: {
-              Authorization: `Bearer ${GITHUB_TOKEN}`,
-              Accept: "application/vnd.github+json"
-            }
-          }
-        );
+    const data = await res.json();
+    const content = atob(data.content.replace(/\n/g, ""));
 
-        if (response.status === 404) {
-          setStatus("File not found.", true);
-          return;
-        }
+    const editor = document.getElementById("editor");
+    editor.value = content;
+    editor.dataset.sha = data.sha;
 
-        if (!response.ok) {
-          throw new Error(`Failed to load file (${response.status})`);
-        }
+    setStatus("File loaded");
+  } catch (e) {
+    setStatus("Load failed: " + e.message, true);
+  }
+}
 
-        const data = await response.json();
-        const decoded = atob(data.content.replace(/\n/g, ""));
+/* ============== SAVE FILE ================= */
 
-        document.getElementById("editor").value = decoded;
-        document.getElementById("editor").dataset.sha = data.sha;
+async function saveFile() {
+  const filename = document.getElementById("filename").value.trim();
+  const editor = document.getElementById("editor");
 
-        setStatus("File loaded successfully.");
-      } catch (err) {
-        setStatus(err.message || "Network error while loading file.", true);
-      }
+  if (!filename) {
+    setStatus("File name required", true);
+    return;
+  }
+
+  const body = {
+    message: `Update ${filename}`,
+    content: btoa(unescape(encodeURIComponent(editor.value))),
+    branch: BRANCH,
+    committer: {
+      name: "Cloud Notepad",
+      email: "notepad@example.com"
     }
+  };
 
-    async function saveFile() {
-      const filename = document.getElementById("filename").value.trim();
-      const content = document.getElementById("editor").value;
-      const sha = document.getElementById("editor").dataset.sha;
+  if (editor.dataset.sha) {
+    body.sha = editor.dataset.sha;
+  }
 
-      if (!filename) {
-        setStatus("File name is required.", true);
-        return;
+  try {
+    const res = await fetch(
+      `${API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filename}`,
+      {
+        method: "PUT",
+        headers: ghHeaders(),
+        body: JSON.stringify(body)
       }
+    );
 
-      try {
-        const body = {
-          message: `Update ${filename}`,
-          content: btoa(unescape(encodeURIComponent(content)))
-        };
+    if (!res.ok) throw new Error(await res.text());
 
-        if (sha) {
-          body.sha = sha;
-        }
+    const data = await res.json();
+    editor.dataset.sha = data.content.sha;
 
-        const response = await fetch(
-          `${apiBase}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filename}`,
-          {
-            method: "PUT",
-            headers: {
-              Authorization: `Bearer ${GITHUB_TOKEN}`,
-              Accept: "application/vnd.github+json",
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body)
-          }
-        );
+    setStatus("File saved");
+  } catch (e) {
+    setStatus("Save failed: " + e.message, true);
+  }
+}
 
-        if (!response.ok) {
-          throw new Error(`Failed to save file (${response.status})`);
-        }
+/* ============== CLEAR ================= */
 
-        const data = await response.json();
-        document.getElementById("editor").dataset.sha = data.content.sha;
-
-        setStatus("File saved successfully.");
-      } catch (err) {
-        setStatus(err.message || "Network error while saving file.", true);
-      }
-    }
-
-    function clearText() {
-      document.getElementById("editor").value = "";
-      document.getElementById("editor").dataset.sha = "";
-      setStatus("Text cleared.");
-    }
-  </script>
+function clearText() {
+  const editor = document.getElementById("editor");
+  editor.value = "";
+  editor.dataset.sha = "";
+  setStatus("Editor cleared");
+}
+</script>
 
 </body>
 </html>
